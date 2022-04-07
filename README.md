@@ -10,8 +10,8 @@ For the ARM rust toolchain, we used [cross](https://github.com/cross-rs/cross). 
 
 ## What is in this repo
 
-* [Client](https://github.com/DavidCarl/rasp_lora_ratchet/client)
-* [Server](https://github.com/DavidCarl/rasp_lora_ratchet/server)
+* [Client](https://github.com/DavidCarl/rasp_lora_ratchet/tree/main/client)
+* [Server](https://github.com/DavidCarl/rasp_lora_ratchet/tree/main/server)
 
 
 ## Run
@@ -42,6 +42,16 @@ We made config files for the code, all the config files can be found in the resp
 
 We modified several libraries to get this working. This is both 
 
+---
+
 oscore: [original](https://github.com/martindisch/oscore) - [modified](https://github.com/DavidCarl/oscore)
 
+Here we had to update the library to a newer version. 
+
+---
+
 sx127x_lora: [original](https://crates.io/crates/sx127x_lora) - [modified](https://github.com/DavidCarl/sx127x_lora)
+
+Here we modified some ...
+
+---

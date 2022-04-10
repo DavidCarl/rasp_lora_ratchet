@@ -21,7 +21,7 @@ use oscore::edhoc::{
 
 // Ratchet
 
-use twoRatchet::ratchfuncs::state;
+use twoRatchet::ED::{EDRatchet};
 
 // LORA MODULE
 
@@ -131,7 +131,7 @@ fn load_config(path: String) -> Config {
 fn lora_ratchet(rtn: EdhocHandshake, dhr_const: u16, config: Config) {
     let lora = rtn.lora;
 
-    let i_ratchet = state::init_i(
+    let i_ratchet = EDRatchet::new(
         rtn.ratchet_keys.ed_rk.try_into().unwrap(),
         rtn.ratchet_keys.ed_rck.try_into().unwrap(),
         rtn.ratchet_keys.ed_sck.try_into().unwrap(),
@@ -143,38 +143,40 @@ fn lora_ratchet(rtn: EdhocHandshake, dhr_const: u16, config: Config) {
     ratchet_message(lora, i_ratchet, dhr_const, 1, config, rtn.ratchet_keys.devaddr.clone());
 }
 
-fn ratchet_message(lora: LoRa<Spi, OutputPin, OutputPin>, mut i_ratchet: state, dhr_const: u16, n: i32, config: Config, devaddr: Vec<u8>) {
+fn ratchet_message(lora: LoRa<Spi, OutputPin, OutputPin>, mut i_ratchet: EDRatchet, dhr_const: u16, n: i32, config: Config, devaddr: Vec<u8>) {
     println!("{:?}", n);
     let mut lora = lora;
-    if n != 10 {
+    //if n != 10 {
         let uplink = i_ratchet.ratchet_encrypt_payload(&[1; 34], &devaddr);
         let (msg_uplink, len_uplink) = lora_send(uplink);
         let transmit = lora.transmit_payload_busy(msg_uplink, len_uplink);
         match transmit {
             Ok(packet_size) => {
+                println!("Uplink message {:?}", n);
                 println!("Sent packet with size: {:?}", packet_size)
             }
             Err(_) => println!("Error uplink"),
         }
 
-        if i_ratchet.fcnt_send >= dhr_const {
-            let dhr_req = i_ratchet.i_initiate_ratch();
+        if i_ratchet.fcnt_up >= dhr_const {
+            let dhr_req = i_ratchet.initiate_ratch(); //i_initiate_ratch();
             let (msg_dhr_req, len_dhr_req) = lora_send(dhr_req);
             let transmit = lora.transmit_payload_busy(msg_dhr_req, len_dhr_req);
             match transmit {
                 Ok(packet_size) => {
-                    println!("Sent packet with size: {:?}", packet_size)
+                    println!("Sent packet with size: {:?}", packet_size);
+                    let res = recieve_window(lora, config).unwrap();
+                    lora = res.lora;
+                    match i_ratchet.receive(res.buffer.to_vec()) {
+                        Some(x) => {
+                            println!("receiving message from server {:?}", x)
+                        }
+                        None => println!("test 1"),
+                    };
                 }
                 Err(er) => println!("Error {:?}, {:?}", n, er),
             }
-            let res = recieve_window(lora, config).unwrap();
-            lora = res.lora;
-            match i_ratchet.i_receive(res.buffer.to_vec()) {
-                Some(x) => {
-                    println!("receiving message from server {:?}", x)
-                }
-                None => println!("test 1"),
-            };
+            
         } else {
             let poll = lora.poll_irq(Some(5000), &mut Delay);
             match poll {
@@ -182,7 +184,7 @@ fn ratchet_message(lora: LoRa<Spi, OutputPin, OutputPin>, mut i_ratchet: state, 
                     println!("Recieved packet with size: {:?}", size);
                     let buffer = lora.read_packet().unwrap();
                     let downlink = &buffer; // if this is not the dhrack, it will still be decrypted and handled
-                    match i_ratchet.i_receive(downlink.to_vec()) {
+                    match i_ratchet.receive(downlink.to_vec()) {
                         Some(x) => {
                             println!("receiving message from server {:?}", x)
                         }
@@ -194,7 +196,7 @@ fn ratchet_message(lora: LoRa<Spi, OutputPin, OutputPin>, mut i_ratchet: state, 
         }
         thread::sleep(time::Duration::from_millis(10000));
         ratchet_message(lora, i_ratchet, dhr_const, n + 1, config, devaddr);
-    }
+   // }
 }
 
 struct EdhocHandshake {
@@ -316,6 +318,7 @@ fn edhoc_third_message(
             }
             Ok(val) => val,
         };
+        
     // I has now received the r_kid, such that the can retrieve the static key of r, and verify the first message
 
     let msg3_sender = match msg2_verifier.verify_message_2(r_static_pub.as_bytes().as_ref()) {

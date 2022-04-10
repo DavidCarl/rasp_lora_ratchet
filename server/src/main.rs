@@ -19,7 +19,7 @@ use x25519_dalek_ng::{PublicKey, StaticSecret};
 
 // Ratchet
 
-use twoRatchet::ratchfuncs::state;
+use twoRatchet::AS::{ASRatchet};
 
 // LORA MODULE
 
@@ -63,15 +63,6 @@ struct StaticKeys {
 static mut FCNTDOWN: u16 = 0;
 
 fn main() {
-    /*
-    let sk = [
-        16, 8, 7, 78, 159, 104, 210, 58, 89, 216, 177, 79, 10, 252, 39, 141, 8, 160, 148, 36, 29,
-        68, 31, 49, 89, 67, 233, 53, 16, 210, 28, 207,
-    ];
-
-
-    //println!("{:?}", d.data[&convert_id_to_string(sk.to_vec())]);
-    */
     lora_recieve();
 }
 
@@ -105,8 +96,11 @@ fn lora_recieve() {
     let enc_keys: StaticKeys = load_static_keys("./keys.json".to_string());
 
     let mut lora = setup_sx127x(125000, 7);
-    let mut msg3_receivers: HashMap<[u8; 4], PartyR<Msg3Receiver>> = HashMap::new(); //PartyR<Msg3Receiver>> = HashMap::new();
-    let mut lora_ratchets: HashMap<[u8; 4], state> = HashMap::new();
+    // Creating two hashmaps, outside the loop to ensure they are no overwritten on each iteration
+    // We do this to make the server function more advanced such it can handle multiple clients at a time
+    // and access the correct data based on the clients devaddr.
+    let mut msg3_receivers: HashMap<[u8; 4], PartyR<Msg3Receiver>> = HashMap::new(); 
+    let mut lora_ratchets: HashMap<[u8; 4], ASRatchet> = HashMap::new();
     loop {
         let poll = lora.poll_irq(None, &mut Delay); //30 Second timeout
         match poll {
@@ -202,7 +196,7 @@ fn handle_third_gen_fourth_message(
     msg3_receiver: PartyR<Msg3Receiver>,
     i_static_pub: PublicKey,
 ) -> Result<Msg4, OwnOrPeerError> {
-    let (msg3verifier, _r_kid) = match msg3_receiver.handle_message_3(msg) {
+    let (msg3verifier, _r_kid) = match msg3_receiver.unpack_message_3_return_kid(msg) {//.handle_message_3(msg) {
         Err(OwnOrPeerError::PeerError(s)) => {
             panic!("Error during  {}", s)
         }
@@ -215,7 +209,7 @@ fn handle_third_gen_fourth_message(
     // find i_static_pub kommer fra lookup
 
     let (msg4_sender, r_sck, r_rck, r_master) =
-        match msg3verifier.verify_message_3(&i_static_pub.as_bytes().to_vec()) {
+        match msg3verifier.verify_message_3(i_static_pub.as_bytes().as_ref()) {
             Err(OwnOrPeerError::PeerError(s)) => {
                 panic!("Error during  {}", s)
             }
@@ -250,20 +244,20 @@ fn handle_third_gen_fourth_message(
 
 struct RatchetMessage {
     lora: LoRa<Spi, OutputPin, OutputPin>,
-    lora_ratchets: HashMap<[u8; 4], state>,
+    lora_ratchets: HashMap<[u8; 4], ASRatchet>,
 }
 
 fn handle_ratchet_message(
     buffer: Vec<u8>,
     mut lora: LoRa<Spi, OutputPin, OutputPin>,
-    mut lora_ratchets: HashMap<[u8; 4], state>,
+    mut lora_ratchets: HashMap<[u8; 4], ASRatchet>,
 ) -> RatchetMessage {
     let incoming = &buffer;
     let devaddr: [u8; 4] = buffer[14..18].try_into().unwrap();
     let ratchet = lora_ratchets.remove(&devaddr);
     match ratchet {
         Some(mut lora_ratchet) => {
-            let (newout, sendnew) = match lora_ratchet.r_receive(&incoming.to_vec()) {
+            let (newout, sendnew) = match lora_ratchet.receive(incoming.to_vec()) {
                 Some((x, b)) => (x, b),
                 None => {
                     println!("error has happened {:?}", incoming);
@@ -361,14 +355,14 @@ fn m_type_zero(
 
 struct TypeTwo {
     msg3_receivers: HashMap<[u8; 4], PartyR<Msg3Receiver>>,
-    lora_ratchets: HashMap<[u8; 4], state>,
+    lora_ratchets: HashMap<[u8; 4], ASRatchet>,
     lora: LoRa<Spi, OutputPin, OutputPin>,
 }
 
 fn m_type_two(
     buffer: Vec<u8>,
     mut msg3_receivers: HashMap<[u8; 4], PartyR<Msg3Receiver>>,
-    mut lora_ratchets: HashMap<[u8; 4], state>,
+    mut lora_ratchets: HashMap<[u8; 4], ASRatchet>,
     mut lora: LoRa<Spi, OutputPin, OutputPin>,
     i_static_pk_material: [u8; 32]
 ) -> TypeTwo {
@@ -389,7 +383,7 @@ fn m_type_two(
                 Err(_) => println!("Error"),
             }
             //Create ratchet
-            let r_ratchet = state::init_r(
+            let r_ratchet = ASRatchet::new(
                 msg4.r_master.try_into().unwrap(),
                 msg4.r_rck.try_into().unwrap(),
                 msg4.r_sck.try_into().unwrap(),

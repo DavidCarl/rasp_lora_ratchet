@@ -343,8 +343,22 @@ fn m_type_zero(
                 Err(_) => println!("Error"),
             }
         }
-        _ => {
-            println!("Something in the code died!");
+        Err(error) => {
+            match error {
+                OwnOrPeerError::OwnError(x) => {
+                let (msg_buffer, len) = lora_send(x);
+                let transmit = lora.transmit_payload_busy(msg_buffer, len);
+                match transmit {
+                Ok(packet_size) => {
+                    println!("Sent packet with size: {:?} OwnError", packet_size)
+                }
+                Err(_) => println!("Error"),
+            }
+                }
+                OwnOrPeerError::PeerError(x) => {
+                    println!("Error in m_type_zero {:?}", x)
+                } 
+            }
         }
     }
     TypeZero {
@@ -391,8 +405,22 @@ fn m_type_two(
             );
             lora_ratchets.insert(devaddr, r_ratchet);
         }
-        Err(_) => {
-            println!("ERROR IN MESSAGE 3 AND 4")
+        Err(error) => {
+            match error {
+                OwnOrPeerError::OwnError(x) => {
+                let (msg_buffer, len) = lora_send(x);
+                let transmit = lora.transmit_payload_busy(msg_buffer, len);
+                match transmit {
+                Ok(packet_size) => {
+                    println!("Sent packet with size: {:?} OwnError", packet_size)
+                }
+                Err(_) => println!("Error"),
+            }
+                }
+                OwnOrPeerError::PeerError(x) => {
+                    println!("Error in m_type_two {:?}", x)
+                } 
+            }
         }
     }
     TypeTwo {

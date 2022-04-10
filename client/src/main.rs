@@ -140,7 +140,7 @@ fn lora_ratchet(rtn: EdhocHandshake, dhr_const: u16, config: Config) {
 
     thread::sleep(time::Duration::from_millis(5000));
 
-    ratchet_message(lora, i_ratchet, dhr_const, 1, config, rtn.ratchet_keys.devaddr.clone());
+    ratchet_message(lora, i_ratchet, dhr_const, 1, config, rtn.ratchet_keys.devaddr);
 }
 
 fn ratchet_message(lora: LoRa<Spi, OutputPin, OutputPin>, mut i_ratchet: EDRatchet, dhr_const: u16, n: i32, config: Config, devaddr: Vec<u8>) {

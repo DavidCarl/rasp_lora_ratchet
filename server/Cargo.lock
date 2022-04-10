@@ -343,6 +343,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "memchr"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
+
+[[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "nb"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -385,6 +397,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom"
+version = "7.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8903e5a29a317527874d0402f867152a3d21c908bb0b933e416c65e301d4c36"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -423,7 +445,7 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 [[package]]
 name = "oscore"
 version = "0.1.0"
-source = "git+https://github.com/DavidCarl/oscore#7422c2c3f6f5a2bc0d1d807ec8b5844332632a2d"
+source = "git+https://github.com/DavidCarl/oscore#94fbb0b68981fbe8237fb0cf7cf3b881bbaf97c3"
 dependencies = [
  "aes",
  "ccm",
@@ -722,13 +744,14 @@ dependencies = [
 [[package]]
 name = "twoRatchet"
 version = "0.1.0"
-source = "git+https://github.com/S3j5b0/Double_ratchet#bfd1358061dadaa5d241eb58202adca1b4336dcb"
+source = "git+https://github.com/S3j5b0/Double_ratchet#1a59c3a14caeab904e0980334b25a4c1652c3845"
 dependencies = [
  "aes",
  "bytes",
  "ccm",
  "generic-array 0.14.5",
  "hkdf",
+ "nom",
  "rand",
  "rand_core",
  "serde_json 0.8.6",

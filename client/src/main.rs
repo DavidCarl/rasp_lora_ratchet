@@ -21,11 +21,12 @@ use oscore::edhoc::{
 
 // Ratchet
 
-use twoRatchet::ED::{EDRatchet};
+use twoRatchet::ED::EDRatchet;
 
 // LORA MODULE
 
 use sx127x_lora::LoRa;
+use sx127x_lora::RadioMode;
 
 const LORA_CS_PIN: u8 = 8;
 const LORA_RESET_PIN: u8 = 22;
@@ -53,7 +54,7 @@ struct Data {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Device {
-    key: Vec<u8>
+    key: Vec<u8>,
 }
 
 const SUITE_I: u8 = 3;
@@ -62,8 +63,8 @@ const METHOD_TYPE_I: u8 = 0;
 #[derive(Serialize, Deserialize, Debug)]
 struct StaticKeys {
     r_static_material: [u8; 32],
-    i_static_material: [u8; 32]
-} 
+    i_static_material: [u8; 32],
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 struct Config {
@@ -73,7 +74,7 @@ struct Config {
     rx1_delay: u64,
     rx1_duration: i32,
     rx2_delay: u64,
-    rx2_duration: i32
+    rx2_duration: i32,
 }
 
 static mut FCNTUP: u16 = 0;
@@ -140,33 +141,50 @@ fn lora_ratchet(rtn: EdhocHandshake, dhr_const: u16, config: Config) {
 
     thread::sleep(time::Duration::from_millis(5000));
 
-    ratchet_message(lora, i_ratchet, dhr_const, 1, config, rtn.ratchet_keys.devaddr);
+    ratchet_message(
+        lora,
+        i_ratchet,
+        dhr_const,
+        1,
+        config,
+        rtn.ratchet_keys.devaddr,
+    );
 }
 
-fn ratchet_message(lora: LoRa<Spi, OutputPin, OutputPin>, mut i_ratchet: EDRatchet, dhr_const: u16, n: i32, config: Config, devaddr: Vec<u8>) {
+fn ratchet_message(
+    lora: LoRa<Spi, OutputPin, OutputPin>,
+    mut i_ratchet: EDRatchet,
+    dhr_const: u16,
+    n: i32,
+    config: Config,
+    devaddr: Vec<u8>,
+) {
     println!("{:?}", n);
     let mut lora = lora;
     //if n != 10 {
-        let uplink = i_ratchet.ratchet_encrypt_payload(&[1; 34], &devaddr);
-        let (msg_uplink, len_uplink) = lora_send(uplink);
-        let transmit = lora.transmit_payload_busy(msg_uplink, len_uplink);
+    let uplink = i_ratchet.ratchet_encrypt_payload(&[1; 34], &devaddr);
+    let (msg_uplink, len_uplink) = lora_send(uplink);
+    let transmit = lora.transmit_payload_busy(msg_uplink, len_uplink);
+    match transmit {
+        Ok(packet_size) => {
+            println!("Uplink message {:?}", n);
+            println!("Sent packet with size: {:?}", packet_size)
+        }
+        Err(_) => println!("Error uplink"),
+    }
+
+    if i_ratchet.fcnt_up >= dhr_const {
+        println!("BEFORE: fcnt_up {:?} dh_id {:?}", i_ratchet.fcnt_up, i_ratchet.dh_id);
+        let dhr_req = i_ratchet.initiate_ratch(); //i_initiate_ratch();
+        let (msg_dhr_req, len_dhr_req) = lora_send(dhr_req);
+        println!("DHR_REQ payload print {:?}", &msg_dhr_req);
+        let transmit = lora.transmit_payload_busy(msg_dhr_req, len_dhr_req);
         match transmit {
             Ok(packet_size) => {
-                println!("Uplink message {:?}", n);
-                println!("Sent packet with size: {:?}", packet_size)
-            }
-            Err(_) => println!("Error uplink"),
-        }
-
-        if i_ratchet.fcnt_up >= dhr_const {
-            let dhr_req = i_ratchet.initiate_ratch(); //i_initiate_ratch();
-            let (msg_dhr_req, len_dhr_req) = lora_send(dhr_req);
-            let transmit = lora.transmit_payload_busy(msg_dhr_req, len_dhr_req);
-            match transmit {
-                Ok(packet_size) => {
-                    println!("Sent packet with size: {:?}", packet_size);
-                    let res = recieve_window(lora, config).unwrap();
-                    lora = res.lora;
+                println!("Sent packet with size: {:?}", packet_size);
+                let res = recieve_window(lora, config);
+                lora = res.lora;
+                if !res.buffer.is_empty() {
                     match i_ratchet.receive(res.buffer.to_vec()) {
                         Some(x) => {
                             println!("receiving message from server {:?}", x)
@@ -174,34 +192,38 @@ fn ratchet_message(lora: LoRa<Spi, OutputPin, OutputPin>, mut i_ratchet: EDRatch
                         None => println!("test 1"),
                     };
                 }
-                Err(er) => println!("Error {:?}, {:?}", n, er),
+                //lora = res.lora;
             }
-            
-        } else {
-            let poll = lora.poll_irq(Some(5000), &mut Delay);
-            match poll {
-                Ok(size) => {
-                    println!("Recieved packet with size: {:?}", size);
-                    let buffer = lora.read_packet().unwrap();
-                    let downlink = &buffer; // if this is not the dhrack, it will still be decrypted and handled
-                    match i_ratchet.receive(downlink.to_vec()) {
-                        Some(x) => {
-                            println!("receiving message from server {:?}", x)
-                        }
-                        None => println!("test 2"),
-                    };
-                }
-                _ => println!("Error happened at DHR_REQ"),
-            }
+            Err(er) => println!("Error {:?}, {:?}", n, er),
         }
-        thread::sleep(time::Duration::from_millis(10000));
-        ratchet_message(lora, i_ratchet, dhr_const, n + 1, config, devaddr);
-   // }
+        println!("AFTER: fcnt_up {:?} dh_id {:?}", i_ratchet.fcnt_up, i_ratchet.dh_id);
+    } 
+    /*else {
+        let poll = lora.poll_irq(Some(5000), &mut Delay);
+        match poll {
+            Ok(size) => {
+                println!("Recieved packet with size: {:?}", size);
+                let buffer = lora.read_packet().unwrap();
+                let downlink = &buffer; // if this is not the dhrack, it will still be decrypted and handled
+                match i_ratchet.receive(downlink.to_vec()) {
+                    Some(x) => {
+                        println!("receiving message from server {:?}", x)
+                    }
+                    None => println!("test 2"),
+                };
+            }
+            _ => println!("Error happened at DHR_REQ"),
+        }
+    }*/
+    lora.set_mode(RadioMode::Sleep);
+    thread::sleep(time::Duration::from_millis(10000));
+    ratchet_message(lora, i_ratchet, dhr_const, n + 1, config, devaddr);
+    // }
 }
 
 struct EdhocHandshake {
-    lora: LoRa<Spi, OutputPin, OutputPin>, 
-    ratchet_keys: RatchetKeys
+    lora: LoRa<Spi, OutputPin, OutputPin>,
+    ratchet_keys: RatchetKeys,
 }
 
 fn edhoc_handshake(
@@ -209,7 +231,7 @@ fn edhoc_handshake(
     enc_keys: StaticKeys,
     deveui: [u8; 8],
     appeui: [u8; 8],
-    config: Config
+    config: Config,
 ) -> Result<EdhocHandshake, Box<dyn stdError>> {
     let i_kid = [0xA2].to_vec();
     let i_static_priv = StaticSecret::from(enc_keys.i_static_material);
@@ -236,50 +258,41 @@ fn edhoc_handshake(
         Err(_) => println!("Error"),
     }
 
-    let res = recieve_window(lora, config).unwrap();
+    let res = recieve_window(lora, config);
     let mut lora = res.lora;
     match res.buffer[0] {
-        1 => {
-            match edhoc_third_message(res.buffer.to_vec(), msg2_reciever, r_static_pub) {
-                Ok((msg3, msg4_reciever)) => {
-                    let (msg, len) = lora_send(msg3);
-                    let transmit = lora.transmit_payload_busy(msg, len);
-                    match transmit {
-                        Ok(packet_size) => {
-                            println!("Sent packet with size: {:?}", packet_size)
-                        }
-                        Err(_) => println!("Error"),
+        1 => match edhoc_third_message(res.buffer.to_vec(), msg2_reciever, r_static_pub) {
+            Ok((msg3, msg4_reciever)) => {
+                let (msg, len) = lora_send(msg3);
+                let transmit = lora.transmit_payload_busy(msg, len);
+                match transmit {
+                    Ok(packet_size) => {
+                        println!("Sent packet with size: {:?}", packet_size)
                     }
-                    let res = recieve_window(lora, config).unwrap();
-                    let lora = res.lora;
-                    match res.buffer[0] {
-                        3 => {
-                            let (ed_sck, ed_rck, ed_rk, devaddr) =
-                                                handle_message_fourth(res.buffer, msg4_reciever);
-                                            let ratchet_keys = RatchetKeys {
-                                                ed_sck,
-                                                ed_rck,
-                                                ed_rk,
-                                                devaddr,
-                                            };
-                                            Ok(EdhocHandshake{lora, ratchet_keys})
-                        }
-                        _ => {
-                            Err(Box::new(MyError(
-                                "Wrong order, got some other message than mtype 3"
-                                    .to_string(),
-                            )))
-                        }
+                    Err(_) => println!("Error"),
+                }
+                let res = recieve_window(lora, config);
+                let lora = res.lora;
+                match res.buffer[0] {
+                    3 => {
+                        let (ed_sck, ed_rck, ed_rk, devaddr) =
+                            handle_message_fourth(res.buffer, msg4_reciever);
+                        let ratchet_keys = RatchetKeys {
+                            ed_sck,
+                            ed_rck,
+                            ed_rk,
+                            devaddr,
+                        };
+                        Ok(EdhocHandshake { lora, ratchet_keys })
                     }
-                }
-                Err(OwnOrPeerError::PeerError(x)) => {
-                    Err(Box::new(MyError(x)))
-                }
-                Err(OwnOrPeerError::OwnError(_)) => {
-                    Err(Box::new(MyError("Own error".to_string())))
+                    _ => Err(Box::new(MyError(
+                        "Wrong order, got some other message than mtype 3".to_string(),
+                    ))),
                 }
             }
-        }
+            Err(OwnOrPeerError::PeerError(x)) => Err(Box::new(MyError(x))),
+            Err(OwnOrPeerError::OwnError(_)) => Err(Box::new(MyError("Own error".to_string()))),
+        },
         _ => Err(Box::new(MyError(
             "Recieved nothing in our allocated time span".to_string(),
         ))),
@@ -318,7 +331,7 @@ fn edhoc_third_message(
             }
             Ok(val) => val,
         };
-        
+
     // I has now received the r_kid, such that the can retrieve the static key of r, and verify the first message
 
     let msg3_sender = match msg2_verifier.verify_message_2(r_static_pub.as_bytes().as_ref()) {
@@ -361,17 +374,21 @@ fn handle_message_fourth(
 
 struct ReceiveWindow {
     lora: LoRa<Spi, OutputPin, OutputPin>,
-    buffer: Vec<u8>
+    buffer: Vec<u8>,
 }
 
-fn recieve_window(mut lora: LoRa<Spi, OutputPin, OutputPin>, config: Config) -> Result<ReceiveWindow, Box<dyn stdError>> {
+fn recieve_window(
+    mut lora: LoRa<Spi, OutputPin, OutputPin>,
+    config: Config,
+) -> ReceiveWindow {
+    //Result<ReceiveWindow, Box<dyn stdError>> {
     thread::sleep(time::Duration::from_millis(config.rx1_delay));
     let poll = lora.poll_irq(Some(config.rx1_duration), &mut Delay);
     match poll {
         Ok(size) => {
             let buffer = lora.read_packet().unwrap();
             println!("Recieved packet with size: {:?}", size);
-            Ok(ReceiveWindow{lora, buffer})
+            ReceiveWindow { lora, buffer }
         }
         Err(_) => {
             thread::sleep(time::Duration::from_millis(config.rx1_delay));
@@ -380,12 +397,16 @@ fn recieve_window(mut lora: LoRa<Spi, OutputPin, OutputPin>, config: Config) -> 
                 Ok(size) => {
                     let buffer = lora.read_packet().unwrap();
                     println!("Recieved packet with size: {:?}", size);
-                    Ok(ReceiveWindow{lora, buffer})
+                    ReceiveWindow { lora, buffer }
                 }
                 Err(_) => {
-                    Err(Box::new(MyError(
+                    /*Err(Box::new(MyError(
                         "Recieved nothing in our rx1 or rx2".to_string(),
-                    )))
+                    )))*/
+                    ReceiveWindow {
+                        lora,
+                        buffer: Vec::new(),
+                    }
                 }
             }
         }

@@ -101,6 +101,7 @@ fn lora_recieve() {
     // and access the correct data based on the clients devaddr.
     let mut msg3_receivers: HashMap<[u8; 4], PartyR<Msg3Receiver>> = HashMap::new(); 
     let mut lora_ratchets: HashMap<[u8; 4], ASRatchet> = HashMap::new();
+    let mut ratchet_recieved: HashMap<[u8; 4], u16> = HashMap::new();
     loop {
         let poll = lora.poll_irq(None, &mut Delay); //30 Second timeout
         match poll {
@@ -116,24 +117,27 @@ fn lora_recieve() {
                     }
                     2 => {
                         println!("Recieved m type 2");
-                        let rtn = m_type_two(buffer, msg3_receivers, lora_ratchets, lora, enc_keys.i_static_pk_material);
+                        let rtn = m_type_two(buffer, msg3_receivers, lora_ratchets, lora, enc_keys.i_static_pk_material, ratchet_recieved);
                         msg3_receivers = rtn.msg3_receivers;
                         lora_ratchets = rtn.lora_ratchets;
                         lora = rtn.lora;
+                        ratchet_recieved = rtn.ratchet_recieved;
                     }
                     5 => {
                         println!("Recieved m type 5");
                         let incoming = &buffer;
-                        let rtn = handle_ratchet_message(incoming.to_vec(), lora, lora_ratchets);
+                        let rtn = handle_ratchet_message(incoming.to_vec(), lora, lora_ratchets, ratchet_recieved);
                         lora = rtn.lora;
                         lora_ratchets = rtn.lora_ratchets;
+                        ratchet_recieved = rtn.ratchet_recieved;
                     }
                     7 => {
                         println!("Recieved m type 7");
                         let incoming = &buffer;
-                        let rtn = handle_ratchet_message(incoming.to_vec(), lora, lora_ratchets);
+                        let rtn = handle_ratchet_message(incoming.to_vec(), lora, lora_ratchets, ratchet_recieved);
                         lora = rtn.lora;
                         lora_ratchets = rtn.lora_ratchets;
+                        ratchet_recieved = rtn.ratchet_recieved;
                     }
                     _ => {
                         println!("Recieved m type _");
@@ -245,18 +249,25 @@ fn handle_third_gen_fourth_message(
 struct RatchetMessage {
     lora: LoRa<Spi, OutputPin, OutputPin>,
     lora_ratchets: HashMap<[u8; 4], ASRatchet>,
+    ratchet_recieved: HashMap<[u8; 4], u16>,
+
 }
 
 fn handle_ratchet_message(
     buffer: Vec<u8>,
     mut lora: LoRa<Spi, OutputPin, OutputPin>,
     mut lora_ratchets: HashMap<[u8; 4], ASRatchet>,
+    mut ratchet_recieved: HashMap<[u8; 4], u16>,
 ) -> RatchetMessage {
     let incoming = &buffer;
     let devaddr: [u8; 4] = buffer[14..18].try_into().unwrap();
     let ratchet = lora_ratchets.remove(&devaddr);
     match ratchet {
         Some(mut lora_ratchet) => {
+            let mut message_recieved = ratchet_recieved.remove(&devaddr).unwrap();
+            message_recieved += 1;
+            println!("Recieved #{:?} messages on the following devaddr {:?}", message_recieved, devaddr);
+            ratchet_recieved.insert(devaddr, message_recieved);
             let (newout, sendnew) = match lora_ratchet.receive(incoming.to_vec()) {
                 Some((x, b)) => (x, b),
                 None => {
@@ -265,6 +276,7 @@ fn handle_ratchet_message(
                     return RatchetMessage {
                         lora,
                         lora_ratchets,
+                        ratchet_recieved,
                     }
                 }
             };
@@ -290,6 +302,7 @@ fn handle_ratchet_message(
     RatchetMessage {
         lora,
         lora_ratchets,
+        ratchet_recieved,
     }
 }
 
@@ -371,6 +384,7 @@ struct TypeTwo {
     msg3_receivers: HashMap<[u8; 4], PartyR<Msg3Receiver>>,
     lora_ratchets: HashMap<[u8; 4], ASRatchet>,
     lora: LoRa<Spi, OutputPin, OutputPin>,
+    ratchet_recieved: HashMap<[u8; 4], u16>,
 }
 
 fn m_type_two(
@@ -378,7 +392,8 @@ fn m_type_two(
     mut msg3_receivers: HashMap<[u8; 4], PartyR<Msg3Receiver>>,
     mut lora_ratchets: HashMap<[u8; 4], ASRatchet>,
     mut lora: LoRa<Spi, OutputPin, OutputPin>,
-    i_static_pk_material: [u8; 32]
+    i_static_pk_material: [u8; 32],
+    mut ratchet_recieved: HashMap<[u8; 4], u16>
 ) -> TypeTwo {
     let (msg, devaddr) = unpack_edhoc_message(buffer);
     let msg3rec = msg3_receivers.remove(&devaddr).unwrap();
@@ -404,6 +419,7 @@ fn m_type_two(
                 devaddr.to_vec(),
             );
             lora_ratchets.insert(devaddr, r_ratchet);
+            ratchet_recieved.insert(devaddr, 2);
         }
         Err(error) => {
             match error {
@@ -427,6 +443,7 @@ fn m_type_two(
         msg3_receivers,
         lora_ratchets,
         lora,
+        ratchet_recieved
     }
 }
 

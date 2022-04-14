@@ -325,9 +325,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.122"
+version = "0.2.123"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec647867e2bf0772e28c8bcde4f0d19a9216916e890543b5a03ed8ef27b8f259"
+checksum = "cb691a747a7ab48abc15c5b42066eaafde10dc427e3b6ee2a1cf43db04c763bd"
 
 [[package]]
 name = "linux-embedded-hal"
@@ -744,7 +744,7 @@ dependencies = [
 [[package]]
 name = "twoRatchet"
 version = "0.1.0"
-source = "git+https://github.com/S3j5b0/Double_ratchet#1a59c3a14caeab904e0980334b25a4c1652c3845"
+source = "git+https://github.com/S3j5b0/Double_ratchet#28472c1f8d52e55c9ea0603dbbdfeb2f16546dfa"
 dependencies = [
  "aes",
  "bytes",

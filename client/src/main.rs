@@ -78,6 +78,7 @@ struct Config {
 }
 
 static mut FCNTUP: u16 = 0;
+static mut MESSAGENUMBER: u16 = 2;
 static mut DEVADDR: [u8; 4] = [0, 0, 0, 0];
 
 #[derive(Debug)]
@@ -167,6 +168,9 @@ fn ratchet_message(
     let transmit = lora.transmit_payload_busy(msg_uplink, len_uplink);
     match transmit {
         Ok(packet_size) => {
+            unsafe {
+                MESSAGENUMBER += 1;
+            }
             println!("Uplink message {:?}", n);
             println!("Sent packet with size: {:?}", packet_size)
         }
@@ -181,6 +185,9 @@ fn ratchet_message(
         let transmit = lora.transmit_payload_busy(msg_dhr_req, len_dhr_req);
         match transmit {
             Ok(packet_size) => {
+                unsafe {
+                    MESSAGENUMBER += 1;
+                }
                 println!("Sent packet with size: {:?}", packet_size);
                 let res = recieve_window(lora, config);
                 lora = res.lora;
@@ -215,6 +222,9 @@ fn ratchet_message(
             _ => println!("Error happened at DHR_REQ"),
         }
     }*/
+    unsafe {
+        println!("Message sent: {:?}", MESSAGENUMBER);
+    }
     lora.set_mode(RadioMode::Sleep);
     thread::sleep(time::Duration::from_millis(10000));
     ratchet_message(lora, i_ratchet, dhr_const, n + 1, config, devaddr);

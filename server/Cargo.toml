@@ -9,6 +9,7 @@ edition = "2021"
 oscore = {git = "https://github.com/DavidCarl/oscore"}
 twoRatchet = {git = "https://github.com/S3j5b0/Double_ratchet"}
 rand = "*"
+rand_core = "0.6.3"
 x25519-dalek-ng = { version = "1.1.1", default-features = false, features = ["u32_backend"] }
 
 rppal = { version = "0.13.1", features = ["hal"] }
